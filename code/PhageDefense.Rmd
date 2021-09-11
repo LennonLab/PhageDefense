@@ -1,0 +1,212 @@
+---
+title: "Phage defense"
+author: "Daniel Schwartz and Jay T. Lennon"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+  - \usepackage{array}
+output: pdf_document
+geometry: margin=2.54cm
+---
+  
+Examine phage defense mechanisms in Bacillus and related bacteria using
+"Defense finder" from "Systematic and quantitative view of the antiviral 
+arsenal of prokaryotes" https://www.biorxiv.org/content/10.1101/2021.09.02.458658v2
+
+## Clear workspace and set directory
+
+```{r setup}
+rm(list=ls())
+getwd()
+setwd("~/GitHub/PhageDefense")
+```
+
+## Load packages and functions
+
+```{r}
+require("png")
+require("grid")
+library("here")
+library("tidyverse")
+library("cowplot")
+```
+
+## Load data
+
+```{r}
+d <- read_delim("~/GitHub/PhageDefense/data/458658_file05.csv", delim = ";")
+```
+
+## Crunch data
+
+```{r}
+# sum number of defense systems
+
+d <- d %>% 
+  select(Assembly,where(is.numeric)) %>% 
+  select(-`Size(pb)`) %>% 
+  dplyr::mutate(n.defense = rowSums(across(where(is.numeric)))) %>% 
+  left_join(d, .)
+# n.defense
+
+# summarize by family
+
+d.sum <- d %>% 
+  group_by(Phylum,Familly) %>% 
+  dplyr::summarise(n = n(), m = mean(n.defense), v = sd(n.defense)) %>% 
+  filter(n>10) %>% 
+  arrange(m)
+  #d.sum %>% as_tibble() %>% print(n=100)
+
+
+# summarize by phylum
+
+d.sum.phyl <- d %>% 
+  group_by(Phylum) %>% 
+  dplyr::summarise(n = n(), m = mean(n.defense), v = sd(n.defense)) %>% 
+  filter(n>10) %>% 
+  arrange(m)
+```
+
+# Plot families by phyla
+
+```{r}
+d.sum %>% 
+  mutate(Phylum = fct_reorder(Phylum, n)) %>% 
+  ggplot(aes(Phylum,m))+
+  geom_jitter(aes(color=Phylum),shape = 21, width = 0.2, show.legend=F)+
+  coord_flip()+
+  theme_classic()+
+  ylab("mean no. defense systems")
+  ggsave("figures/Phyla.png")
+
+# Plot by family within Firmicutes
+
+d.sum %>% 
+  filter(Phylum=="Firmicutes") %>%
+  mutate(Familly = fct_reorder(Familly, m)) %>% 
+  ggplot(aes(Familly,m))+
+  
+  geom_col()+
+  geom_errorbar(aes(ymin = m-v, ymax = m+v), size = 1)+
+  ylab("mean no. defense systems")+
+  coord_flip()+
+  theme_classic()
+  ggsave("figures/Families.png")
+
+# Plot by phyla
+d.sum.phyl %>% 
+  mutate(Phylum = fct_reorder(Phylum, m)) %>% 
+  ggplot(aes(Phylum,m))+
+  geom_col()+
+  geom_errorbar(aes(ymin = m-v, ymax = m+v), size = 1)+
+  ylab("mean no. defense systems")+
+  coord_flip()+
+  theme_classic()
+  ggsave("figures/Phyla.means.png")
+
+
+bacillaceae <- d.sum[which(d.sum$Familly=='Bacillaceae'), ]
+# mean number defenses = 2.65
+
+clostridiaceae <- d.sum[which(d.sum$Familly=='Clostridiaceae'), ]
+# mean number defenses = 4.82
+
+firmicutes <-  d.sum.phyl[which(d.sum.phyl$Phylum=='Firmicutes'), ]
+# mean number defenses = 3.62
+```
+  
+  
+# Kernel density plots
+
+```{r}
+png(filename = "~/GitHub/PhageDefense/figures/defense.kernel.png",
+    width = 1200, height = 1200, res = 96*2)
+
+df <-as.numeric(d$n.defense)
+
+plot.new()
+par(mar = c(7, 7, 5, 7))
+
+all.kern <- density(df, bw = 0.8)
+
+plot(all.kern, main = NA, xaxt = "n", yaxt = "n", cex.lab = 1.5, ylab = "",
+     xlab = "", xlim = c(0, 55), ylim = c(0, 0.15), lwd = 2.5, lty = 1, col = "black")
+box(lwd=2)
+     
+mtext('Density', side = 2, outer = TRUE, cex = 1.5, 
+      line = -2, adj = 0.5)
+
+mtext('Number of defenses', side = 1, outer = TRUE, 
+      cex = 1.5, line = -3, adj = 0.5)
+      
+axis(side = 1, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    labels = c("0", "10", "20", "30", "40", "50"), at = c(0, 10, 20, 30, 40, 50))
+
+axis(side = 3, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    at = c(0, 10, 20, 30, 40, 50), labels = F)
+
+axis(side = 2, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    labels = c("0", "0.05","0.10", "0.15"), at = c(0, 0.05, 0.10, 0.15))
+
+axis(side = 4, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    at = c(0, 0.05, 0.10, 0.15), labels = F)
+
+abline(v = bacillaceae$m, col = "red", lty = 2, lwd = 2)
+    
+# Close Plot Device
+dev.off()
+graphics.off()
+
+# Show Plot
+img <- readPNG("~/GitHub/PhageDefense/figures/defense.kernel.png")
+
+grid.raster(img)
+```
+
+# Logarithm kernel density plot
+
+```{r}
+png(filename = "~/GitHub/PhageDefense/figures/defense.kernel.log.png",
+    width = 1200, height = 1200, res = 96*2)
+
+delt.zero <- replace(df, df==0, 0.5)
+log.df <- log2(delt.zero)
+
+plot.new()
+par(mar = c(7, 7, 5, 7))
+
+all.kern <- density(log.df, bw = 0.9)
+
+plot(all.kern, main = NA, xaxt = "n", yaxt = "n", cex.lab = 1.5, ylab = "",
+     xlab = "", xlim = c(-4, 7), ylim = c(0, 0.32), lwd = 2.5, lty = 1, col = "black")
+box(lwd=2)
+     
+mtext('Density', side = 2, outer = TRUE, cex = 1.5, 
+      line = -2, adj = 0.5)
+
+mtext('Number of defenses', side = 1, outer = TRUE, 
+      cex = 1.5, line = -3, adj = 0.5)
+      
+axis(side = 1, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    labels = c("0", "5", "50"), at = c(-1, log2(5), log2(50)))
+
+axis(side = 3, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    at = c(-1, log2(5), log2(50)), labels = F)
+
+axis(side = 2, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    labels = c("0.0", "0.1", "0.2", "0.3"), at = c(0, 0.1, 0.2, 0.3))
+
+axis(side = 4, lwd.ticks = 2, cex.axis = 1.5, las = 1,
+    at = c(0, 0.1, 0.2, 0.3), labels = F)
+
+abline(v = log2(bacillaceae$m), col = "red", lty = 2, lwd = 2)
+    
+# Close Plot Device
+dev.off()
+graphics.off()
+
+# Show Plot
+img <- readPNG("~/GitHub/PhageDefense/figures/defense.kernel.log.png")
+
+grid.raster(img)
+```
